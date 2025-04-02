@@ -1,24 +1,32 @@
-import { useEffect, useState } from 'react';
-import { apiService, FinanceSummary, Transaction } from '../api/api';
+import { useEffect, useState } from "react";
+import { apiService, FinanceSummary, Transaction, Category } from "../api/api";
 
 const Dashboard = () => {
   const [summary, setSummary] = useState<FinanceSummary | null>(null);
-  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>(
+    []
+  );
+  const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
-        const [summaryData, transactions] = await Promise.all([
-          apiService.getFinanceSummary(),
-          apiService.getTransactions(),
-        ]);
-        
+        const [summaryData, transactionsData, categoriesData] =
+          await Promise.all([
+            apiService.getFinanceSummary(),
+            apiService.getTransactions({
+              page: 0,
+              pageSize: 5,
+            }),
+            apiService.getCategories(),
+          ]);
+
         setSummary(summaryData);
-        // Get latest 5 transactions
-        setRecentTransactions(transactions.slice(0, 5));
+        setRecentTransactions(transactionsData.data);
+        setCategories(categoriesData);
       } catch (error) {
-        console.error('Error fetching dashboard data:', error);
+        console.error("Error fetching dashboard data:", error);
       } finally {
         setLoading(false);
       }
@@ -46,22 +54,36 @@ const Dashboard = () => {
         <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Total Income</dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">${summary.total_incomes.toFixed(2)}</dd>
+              <dt className="text-sm font-medium text-gray-500 truncate">
+                Total Income
+              </dt>
+              <dd className="mt-1 text-3xl font-semibold text-gray-900">
+                ${summary.total_incomes.toFixed(2)}
+              </dd>
             </div>
           </div>
 
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Total Expenses</dt>
-              <dd className="mt-1 text-3xl font-semibold text-red-600">${summary.total_expenses.toFixed(2)}</dd>
+              <dt className="text-sm font-medium text-gray-500 truncate">
+                Total Expenses
+              </dt>
+              <dd className="mt-1 text-3xl font-semibold text-red-600">
+                ${summary.total_expenses.toFixed(2)}
+              </dd>
             </div>
           </div>
 
           <div className="bg-white overflow-hidden shadow rounded-lg">
             <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">Net Balance</dt>
-              <dd className={`mt-1 text-3xl font-semibold ${summary.net >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+              <dt className="text-sm font-medium text-gray-500 truncate">
+                Net Balance
+              </dt>
+              <dd
+                className={`mt-1 text-3xl font-semibold ${
+                  summary.net >= 0 ? "text-green-600" : "text-red-600"
+                }`}
+              >
                 ${summary.net.toFixed(2)}
               </dd>
             </div>
@@ -72,7 +94,9 @@ const Dashboard = () => {
       {/* Recent Transactions */}
       <div className="bg-white shadow rounded-lg mb-8">
         <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Transactions</h3>
+          <h3 className="text-lg leading-6 font-medium text-gray-900">
+            Recent Transactions
+          </h3>
         </div>
         <div className="px-4 sm:px-6 py-3">
           {recentTransactions.length > 0 ? (
@@ -80,16 +104,34 @@ const Dashboard = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
                       Date
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
                       Description
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
+                      Category
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
                       Amount
                     </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                    >
                       Type
                     </th>
                   </tr>
@@ -101,10 +143,21 @@ const Dashboard = () => {
                         {new Date(transaction.date).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {transaction.description || 'No description'}
+                        {transaction.description || "No description"}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                        {categories.find(
+                          (c) => c.id === transaction.category_id
+                        )?.name || "Unknown"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <span className={transaction.transaction_type === 'EXPENSE' ? 'text-red-600' : 'text-green-600'}>
+                        <span
+                          className={
+                            transaction.transaction_type === "EXPENSE"
+                              ? "text-red-600"
+                              : "text-green-600"
+                          }
+                        >
                           ${transaction.amount.toFixed(2)}
                         </span>
                       </td>
@@ -125,4 +178,4 @@ const Dashboard = () => {
   );
 };
 
-export default Dashboard; 
+export default Dashboard;

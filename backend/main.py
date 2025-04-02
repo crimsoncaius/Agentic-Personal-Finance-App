@@ -6,19 +6,25 @@ import uvicorn
 
 from .database import Base, engine
 from .init_db import seed_categories
-from .routers import categories, transactions, reports
+from .routers import categories, transactions, reports, agent, auth
+from .migrations import migrate_database
 
-# 1. Create tables
+# 1. Run database migrations
+migrate_database()
+
+# 2. Create tables
 Base.metadata.create_all(bind=engine)
 
-# 2. Seed categories
+# 3. Seed categories
 seed_categories()
 
-# 3. Create FastAPI app
+# 4. Create FastAPI app
 app = FastAPI(
     title="Personal Finance App",
     description="Track expenses, incomes, and generate basic reports.",
-    version="1.0.0"
+    version="1.0.0",
+    # Disable automatic redirects for trailing slashes
+    redirect_slashes=False,
 )
 
 # Add CORS middleware
@@ -30,11 +36,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 4. Include Routers
+# 5. Include Routers
+app.include_router(auth.router)  # Add auth router first
 app.include_router(categories.router)
 app.include_router(transactions.router)
 app.include_router(reports.router)
+app.include_router(agent.router)
 
 if __name__ == "__main__":
     # Run the app
-    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True) 
+    uvicorn.run("app.main:app", host="0.0.0.0", port=8000, reload=True)
