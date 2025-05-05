@@ -1,149 +1,212 @@
 import { useEffect, useState } from "react";
-import {
-  apiService,
-  FinanceSummary,
-  ExpenseBreakdown,
-  CategoryExpense,
-} from "../api/api";
+import { apiService } from "../api/api";
 import {
   PieChart,
   Pie,
   Cell,
-  ResponsiveContainer,
-  Legend,
   Tooltip,
+  Legend,
+  ResponsiveContainer,
+  Sector,
 } from "recharts";
+import { DayPicker, DateRange } from "react-day-picker";
+import * as Popover from "@radix-ui/react-popover";
+import { format } from "date-fns";
+import "react-day-picker/dist/style.css";
+
+const COLORS = [
+  "#8884d8",
+  "#82ca9d",
+  "#ffc658",
+  "#ff8042",
+  "#8dd1e1",
+  "#a4de6c",
+  "#d0ed57",
+  "#d8854f",
+  "#d0ed57",
+  "#a28fd0",
+];
+
+const NoOpActiveShape = (props: any) => <Sector {...props} />;
 
 const Reports = () => {
-  const [expenseBreakdown, setExpenseBreakdown] = useState<ExpenseBreakdown[]>(
-    []
-  );
-  const [categoryExpenses, setCategoryExpenses] = useState<CategoryExpense[]>(
-    []
-  );
-  const [summary, setSummary] = useState<FinanceSummary | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [data, setData] = useState<any[]>([]);
+  const [type, setType] = useState<"EXPENSE" | "INCOME">("EXPENSE");
+  const [dateRange, setDateRange] = useState<DateRange | undefined>();
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchData = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params: any = {
+        transaction_type: type,
+      };
+      if (dateRange?.from && dateRange?.to) {
+        params.start_date = format(dateRange.from, "yyyy-MM-dd");
+        params.end_date = format(dateRange.to, "yyyy-MM-dd");
+      }
+      const response = await apiService.getReportByCategory(params);
+      setData(response);
+    } catch (err: any) {
+      setError(
+        err.response?.data?.detail || "Failed to load report. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [summaryData, breakdownData, categoryData] = await Promise.all([
-          apiService.getFinanceSummary(),
-          apiService.getExpenseBreakdown(),
-          apiService.getExpensesByCategory(),
-        ]);
-
-        setSummary(summaryData);
-        setExpenseBreakdown(breakdownData);
-        setCategoryExpenses(categoryData);
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchData();
-  }, []);
+    // eslint-disable-next-line
+  }, [type, dateRange]);
 
-  const COLORS = [
-    "#0088FE",
-    "#00C49F",
-    "#FFBB28",
-    "#FF8042",
-    "#8884D8",
-    "#82CA9D",
-  ];
+  // Pie chart percentage helper
+  const getTotal = () => data.reduce((sum, d) => sum + d.total, 0);
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-lg text-gray-500">Loading...</div>
-      </div>
-    );
-  }
-
-  // Transform category expenses for the pie chart
-  const expenseChartData = categoryExpenses.map((item) => ({
-    name: item.category,
-    value: item.total,
-  }));
+  // Filter out zero-value categories for chart and legend
+  const filteredData = data.filter((item) => item.total > 0);
 
   return (
     <div>
-      <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">
-          Financial Reports
-        </h1>
+      <div className="mb-5 flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+        <h1 className="text-2xl font-semibold text-gray-900">Reports</h1>
+        <div className="flex gap-4 items-center">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Type
+            </label>
+            <select
+              value={type}
+              onChange={(e) => setType(e.target.value as any)}
+              className="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 text-sm"
+            >
+              <option value="EXPENSE">Expense</option>
+              <option value="INCOME">Income</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Date Range
+            </label>
+            <Popover.Root
+              open={datePopoverOpen}
+              onOpenChange={setDatePopoverOpen}
+            >
+              <Popover.Trigger asChild>
+                <button
+                  type="button"
+                  className="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  {dateRange?.from && dateRange?.to
+                    ? `${format(dateRange.from, "MMM d, yyyy")} – ${format(
+                        dateRange.to,
+                        "MMM d, yyyy"
+                      )}`
+                    : "Filter by date range"}
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  sideOffset={8}
+                  className="z-50 bg-white rounded-lg shadow-lg p-4 border border-gray-200"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
+                  <DayPicker
+                    mode="range"
+                    selected={dateRange}
+                    onSelect={setDateRange}
+                    toDate={new Date()}
+                    disabled={{ after: new Date() }}
+                    className="rounded-lg"
+                  />
+                  <div className="mt-2 flex justify-end">
+                    <button
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                      onClick={() => setDateRange(undefined)}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          </div>
+        </div>
       </div>
-
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">
-                Total Income
-              </dt>
-              <dd className="mt-1 text-3xl font-semibold text-gray-900">
-                ${summary.total_incomes.toFixed(2)}
-              </dd>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">
-                Total Expenses
-              </dt>
-              <dd className="mt-1 text-3xl font-semibold text-red-600">
-                ${summary.total_expenses.toFixed(2)}
-              </dd>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <dt className="text-sm font-medium text-gray-500 truncate">
-                Net Balance
-              </dt>
-              <dd
-                className={`mt-1 text-3xl font-semibold ${
-                  summary.net >= 0 ? "text-green-600" : "text-red-600"
-                }`}
-              >
-                ${summary.net.toFixed(2)}
-              </dd>
-            </div>
-          </div>
+      {error && (
+        <div
+          className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative"
+          role="alert"
+        >
+          <span className="block sm:inline">{error}</span>
         </div>
       )}
-
-      {/* Expense by Category Chart */}
-      <div className="bg-white shadow rounded-lg mb-8">
-        <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            Expenses by Category
-          </h3>
+      {loading ? (
+        <div className="flex items-center justify-center h-64">
+          <div className="text-lg text-gray-500">Loading...</div>
         </div>
-        <div className="px-4 py-5 sm:p-6">
-          {expenseChartData.length > 0 ? (
-            <div className="h-80">
-              <ResponsiveContainer width="100%" height="100%">
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <h2 className="text-lg font-semibold mb-4">
+              Breakdown by Category
+            </h2>
+            {filteredData.length === 0 ? (
+              <div className="text-gray-500">
+                No data for selected range/type.
+              </div>
+            ) : (
+              <ul className="divide-y divide-gray-200">
+                {filteredData.map((item, idx) => (
+                  <li key={item.category} className="flex justify-between py-2">
+                    <span className="font-medium text-gray-700">
+                      {item.category}
+                    </span>
+                    <span className="text-gray-900 font-semibold">
+                      {item.total.toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD",
+                      })}
+                    </span>
+                  </li>
+                ))}
+                <li className="flex justify-between py-2 font-bold border-t mt-2">
+                  <span>Total</span>
+                  <span>
+                    {filteredData
+                      .reduce((sum, d) => sum + d.total, 0)
+                      .toLocaleString(undefined, {
+                        style: "currency",
+                        currency: "USD",
+                      })}
+                  </span>
+                </li>
+              </ul>
+            )}
+          </div>
+          <div className="bg-white p-6 rounded-lg shadow flex flex-col items-center justify-center">
+            <h2 className="text-lg font-semibold mb-4">Pie Chart</h2>
+            {filteredData.length === 0 ? (
+              <div className="text-gray-500">No data to display.</div>
+            ) : (
+              <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
                   <Pie
-                    data={expenseChartData}
+                    data={filteredData}
+                    dataKey="total"
+                    nameKey="category"
                     cx="50%"
                     cy="50%"
-                    labelLine={false}
-                    outerRadius={80}
-                    fill="#8884d8"
-                    dataKey="value"
-                    label={({ name, percent }) =>
-                      `${name}: ${(percent * 100).toFixed(0)}%`
-                    }
+                    outerRadius={100}
+                    innerRadius={60}
+                    isAnimationActive={false}
+                    activeShape={NoOpActiveShape}
                   >
-                    {expenseChartData.map((entry, index) => (
+                    {filteredData.map((entry, index) => (
                       <Cell
                         key={`cell-${index}`}
                         fill={COLORS[index % COLORS.length]}
@@ -151,86 +214,23 @@ const Reports = () => {
                     ))}
                   </Pie>
                   <Tooltip
-                    formatter={(value: number) => `$${value.toFixed(2)}`}
+                    formatter={(_, __, props: any) => {
+                      const total = filteredData.reduce(
+                        (sum, d) => sum + d.total,
+                        0
+                      );
+                      const percent =
+                        total > 0 ? (props.payload.total / total) * 100 : 0;
+                      return [`${percent.toFixed(1)}%`, props.payload.category];
+                    }}
                   />
                   <Legend />
                 </PieChart>
               </ResponsiveContainer>
-            </div>
-          ) : (
-            <p className="text-center text-gray-500 py-10">
-              No expense data available for chart
-            </p>
-          )}
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Expense Breakdown Table */}
-      <div className="bg-white shadow rounded-lg">
-        <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
-          <h3 className="text-lg leading-6 font-medium text-gray-900">
-            Expense Breakdown
-          </h3>
-        </div>
-        <div className="px-4 sm:px-6 py-3">
-          {expenseBreakdown.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Date
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Description
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Category
-                    </th>
-                    <th
-                      scope="col"
-                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                    >
-                      Amount
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {expenseBreakdown.map((expense) => (
-                    <tr
-                      key={`${expense.date}-${expense.description}-${expense.amount}`}
-                    >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {new Date(expense.date).toLocaleDateString()}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {expense.description || "No description"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {expense.category}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-red-600">
-                        ${expense.amount.toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="text-gray-500 py-4">No expense data available.</p>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 };

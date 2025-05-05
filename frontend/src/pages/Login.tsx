@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { apiService } from "../api/api";
 import { useAuth } from "../contexts/AuthContext";
 
@@ -58,12 +58,12 @@ const Login = () => {
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
             Or{" "}
-            <a
-              href="/register"
+            <Link
+              to="/register"
               className="font-medium text-indigo-600 hover:text-indigo-500"
             >
               create a new account
-            </a>
+            </Link>
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit(onSubmit)}>

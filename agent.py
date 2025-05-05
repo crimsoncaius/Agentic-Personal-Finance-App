@@ -182,7 +182,7 @@ class ViewNode(BaseNode):
 
         Database Schema:
         Table: categories (id INTEGER PK, name VARCHAR UNIQUE, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')))
-        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, is_recurring BOOLEAN, recurrence_period VARCHAR(7), transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
+        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
 
         {categories_context}
 
@@ -226,7 +226,7 @@ class CreateNode(BaseNode):
 
         Database Schema:
         Table: categories (id INTEGER PK, name VARCHAR UNIQUE, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')))
-        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, is_recurring BOOLEAN (0/1), recurrence_period VARCHAR(7), transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
+        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
 
         {categories_context}
 
@@ -236,11 +236,6 @@ class CreateNode(BaseNode):
         1. If user explicitly mentions a category name from 'Current categories', use subquery `(SELECT id FROM categories WHERE name = 'ExplicitCategoryName')`.
         2. If no category mentioned, analyze description. If it matches a category (e.g., 'lunch' -> 'Food & Groceries'), use subquery `(SELECT id FROM categories WHERE name = 'InferredCategoryName')`.
         3. If no match/inference, use `(SELECT id FROM categories WHERE name = 'Misc')` as fallback. Ensure 'Misc' exists.
-        
-        **IMPORTANT:** For the recurrence_period field:
-        1. If is_recurring is 0 (false), always set recurrence_period to 'NONE', not NULL
-        2. If is_recurring is 1 (true), set recurrence_period to an appropriate value ('DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY')
-        3. Never leave recurrence_period as NULL
 
         Return ONLY the SQL statement (INSERT) formatted for **SQLite**. Use 0/1 for booleans. No explanations or markdown.
         """
@@ -278,19 +273,13 @@ class UpdateNode(BaseNode):
 
         Database Schema:
         Table: categories (id INTEGER PK, name VARCHAR UNIQUE, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')))
-        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, is_recurring BOOLEAN (0/1), recurrence_period VARCHAR(7), transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
+        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
 
         {categories_context}
 
         **CRITICAL:** Generated UPDATE statements **MUST** include a `WHERE` clause to target the specific record(s) to update (usually by `id`). Infer the target record ID from the user request if possible (e.g., "transaction id 10"). If no target is clear, the query will likely fail safety checks.
 
         **SQLite Date/Time Guidance:** Use `date('{current_date_str}')` if needed for today's date.
-        
-        **IMPORTANT:** For the recurrence_period field:
-        1. If is_recurring is being set to 0 (false), always set recurrence_period to 'NONE', not NULL
-        2. If is_recurring is being set to 1 (true), set recurrence_period to an appropriate value ('DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY')
-        3. Never leave recurrence_period as NULL
-        4. If updating is_recurring but not explicitly mentioning recurrence_period, handle appropriately (set to 'NONE' or infer from context)
 
         Return ONLY the SQL statement (UPDATE) formatted for **SQLite**. Use 0/1 for booleans. No explanations or markdown.
         """
@@ -329,7 +318,7 @@ class DeleteNode(BaseNode):
 
         Database Schema:
         Table: categories (id INTEGER PK, name VARCHAR UNIQUE, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')))
-        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, is_recurring BOOLEAN (0/1), recurrence_period VARCHAR(7), transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
+        Table: transactions (id INTEGER PK, amount FLOAT, date DATE, description VARCHAR, transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')), category_id INTEGER FK REFERENCES categories(id))
 
         {categories_context}
 

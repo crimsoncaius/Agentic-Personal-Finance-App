@@ -1,6 +1,6 @@
 # app/schemas.py
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, constr
 from typing import Optional, List, TypeVar, Generic
 import datetime
 from enum import Enum
@@ -10,14 +10,6 @@ from enum import Enum
 class TransactionType(str, Enum):
     INCOME = "INCOME"
     EXPENSE = "EXPENSE"
-
-
-class RecurrencePeriod(str, Enum):
-    NONE = "NONE"
-    DAILY = "DAILY"
-    WEEKLY = "WEEKLY"
-    MONTHLY = "MONTHLY"
-    YEARLY = "YEARLY"
 
 
 # Category Schemas
@@ -36,13 +28,42 @@ class CategoryRead(BaseModel):
 
 # Transaction Schemas
 class TransactionBase(BaseModel):
-    amount: float = Field(..., example=50.75)
-    date: Optional[datetime.date] = Field(None, example="2025-03-20")
-    description: Optional[str] = Field(None, example="Grocery shopping")
-    is_recurring: bool = Field(False)
-    recurrence_period: RecurrencePeriod = Field(default=RecurrencePeriod.NONE)
-    transaction_type: TransactionType = Field(..., example="EXPENSE")
-    category_id: int = Field(..., example=1)
+    amount: float = Field(
+        ...,
+        example=50.75,
+        gt=0,
+        description="Transaction amount must be greater than 0",
+    )
+    date: Optional[datetime.date] = Field(
+        None,
+        example="2025-03-20",
+        description="Transaction date (defaults to current date if not provided)",
+    )
+    description: constr(min_length=1, max_length=500) = Field(
+        ...,
+        example="Grocery shopping",
+        description="Description of the transaction (1-500 characters required)",
+    )
+    transaction_type: TransactionType = Field(
+        ..., example="EXPENSE", description="Type of transaction (INCOME or EXPENSE)"
+    )
+    category_id: int = Field(
+        ..., example=1, gt=0, description="ID of the associated category"
+    )
+
+    @validator("date")
+    def validate_date(cls, v):
+        if v and v > datetime.date.today():
+            raise ValueError("Transaction date cannot be in the future")
+        return v
+
+    @validator("amount")
+    def validate_amount(cls, v):
+        if not isinstance(v, (int, float)):
+            raise ValueError("Amount must be a number")
+        if v > 1000000000:  # 1 billion limit
+            raise ValueError("Amount cannot exceed 1 billion")
+        return round(v, 2)  # Round to 2 decimal places
 
 
 class TransactionCreate(TransactionBase):

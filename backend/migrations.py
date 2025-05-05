@@ -1,3 +1,5 @@
+# This file is no longer used. Database migrations and seeding are now handled elsewhere or on user signup.
+
 from sqlalchemy import create_engine, text
 from .database import SQLALCHEMY_DATABASE_URL
 from .models import User
@@ -160,8 +162,6 @@ def migrate_database():
                     amount FLOAT NOT NULL,
                     date DATE DEFAULT CURRENT_DATE,
                     description VARCHAR,
-                    is_recurring BOOLEAN DEFAULT FALSE,
-                    recurrence_period VARCHAR(7) DEFAULT 'NONE' CHECK(recurrence_period IN ('NONE', 'DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY')),
                     transaction_type VARCHAR(7) CHECK(transaction_type IN ('INCOME', 'EXPENSE')),
                     user_id INTEGER NOT NULL,
                     category_id INTEGER,

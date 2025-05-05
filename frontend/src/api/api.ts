@@ -68,8 +68,6 @@ export interface Transaction {
   description: string;
   transaction_type: "INCOME" | "EXPENSE";
   category_id: number;
-  is_recurring: boolean;
-  recurrence_period?: string;
 }
 
 export interface PaginationParams {
@@ -92,24 +90,6 @@ export interface PaginatedResponse<T> {
   page: number;
   pageSize: number;
   totalPages: number;
-}
-
-export interface FinanceSummary {
-  total_expenses: number;
-  total_incomes: number;
-  net: number;
-}
-
-export interface ExpenseBreakdown {
-  date: string;
-  description: string;
-  category: string;
-  amount: number;
-}
-
-export interface CategoryExpense {
-  category: string;
-  total: number;
 }
 
 export interface LoginResponse {
@@ -179,6 +159,18 @@ export const apiService = {
     return response.data;
   },
 
+  updateCategory: async (
+    id: number,
+    category: Omit<Category, "id">
+  ): Promise<Category> => {
+    const response = await api.put<Category>(`/categories/${id}`, category);
+    return response.data;
+  },
+
+  deleteCategory: async (id: number): Promise<void> => {
+    await api.delete(`/categories/${id}`);
+  },
+
   // Transactions
   getTransactions: async (
     params: PaginationParams & {
@@ -225,7 +217,7 @@ export const apiService = {
   createTransaction: async (
     transaction: Omit<Transaction, "id">
   ): Promise<Transaction> => {
-    const response = await api.post<Transaction>("/transactions", transaction);
+    const response = await api.post<Transaction>("/transactions/", transaction);
     return response.data;
   },
 
@@ -242,22 +234,6 @@ export const apiService = {
 
   deleteTransaction: async (id: number): Promise<void> => {
     await api.delete(`/transactions/${id}`);
-  },
-
-  // Reports
-  getFinanceSummary: async (): Promise<FinanceSummary> => {
-    const response = await api.get<FinanceSummary>("/reports/summary");
-    return response.data;
-  },
-
-  getExpenseBreakdown: async (): Promise<ExpenseBreakdown[]> => {
-    const response = await api.get<ExpenseBreakdown[]>("/reports/breakdown");
-    return response.data;
-  },
-
-  getExpensesByCategory: async (): Promise<CategoryExpense[]> => {
-    const response = await api.get<CategoryExpense[]>("/reports/by-category");
-    return response.data;
   },
 
   // Assistant
@@ -340,6 +316,15 @@ export const apiService = {
       });
       throw error;
     }
+  },
+
+  getReportByCategory: async (params: {
+    transaction_type: "INCOME" | "EXPENSE";
+    start_date?: string;
+    end_date?: string;
+  }): Promise<{ category: string; total: number }[]> => {
+    const response = await api.get("/reports/by-category", { params });
+    return response.data;
   },
 };
 

@@ -18,7 +18,7 @@ from datetime import date, datetime
 from passlib.context import CryptContext
 
 from .database import Base
-from .schemas import TransactionType, RecurrencePeriod
+from .schemas import TransactionType
 
 # Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -71,8 +71,6 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     date = Column(Date, default=func.current_date())
     description = Column(String, nullable=True)
-    is_recurring = Column(Boolean, default=False)
-    recurrence_period = Column(SAEnum(RecurrencePeriod), default=RecurrencePeriod.NONE)
     transaction_type = Column(SAEnum(TransactionType), nullable=False)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
 

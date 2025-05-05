@@ -54,14 +54,12 @@ const ChatMessage = ({ message }: { message: Message }) => {
               if (row.length < 3) return null;
 
               const [
-                id,
                 amount,
                 date,
                 description,
                 isRecurring,
                 recurrencePeriod,
                 type,
-                categoryId,
               ] = row;
               const isExpense = type === "EXPENSE";
 

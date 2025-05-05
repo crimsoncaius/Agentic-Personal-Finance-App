@@ -93,50 +93,78 @@ def get_expense_breakdown(
 
 
 @router.get("/by-category")
-def get_expenses_by_category(
-    db: Session = Depends(get_db), current_user: User = Depends(get_current_active_user)
+def get_totals_by_category(
+    transaction_type: TransactionType = TransactionType.EXPENSE,
+    start_date: str = None,
+    end_date: str = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
 ):
     """
-    Returns total expenses grouped by category
+    Returns total amount grouped by category for the given transaction_type and date range.
     """
     try:
-        # Query total expenses by category
+        # Build base query for transactions
+        transaction_query = db.query(models.Transaction).filter(
+            models.Transaction.transaction_type == transaction_type,
+            models.Transaction.user_id == current_user.id,
+        )
+        if start_date and end_date:
+            transaction_query = transaction_query.filter(
+                models.Transaction.date >= start_date,
+                models.Transaction.date <= end_date,
+            )
+
+        # Query totals by category
         category_totals = (
             db.query(
                 models.Category.name.label("category"),
                 func.sum(models.Transaction.amount).label("total"),
             )
-            .outerjoin(models.Transaction)
-            .filter(
-                models.Transaction.transaction_type == TransactionType.EXPENSE,
-                models.Transaction.user_id == current_user.id,
+            .outerjoin(
+                models.Transaction,
+                (models.Transaction.category_id == models.Category.id)
+                & (models.Transaction.user_id == current_user.id),
             )
-            .group_by(models.Category.name)
+            .filter(models.Category.user_id == current_user.id)
+            .filter(models.Category.transaction_type == transaction_type)
+        )
+        if start_date and end_date:
+            category_totals = category_totals.filter(
+                models.Transaction.date >= start_date,
+                models.Transaction.date <= end_date,
+            )
+        category_totals = (
+            category_totals.group_by(models.Category.name)
             .order_by(func.sum(models.Transaction.amount).desc())
             .all()
         )
 
-        # Handle uncategorized expenses
-        uncategorized = (
-            db.query(func.sum(models.Transaction.amount).label("total"))
-            .filter(
-                models.Transaction.category_id.is_(None),
-                models.Transaction.transaction_type == TransactionType.EXPENSE,
-                models.Transaction.user_id == current_user.id,
-            )
-            .scalar()
+        # Handle uncategorized totals
+        uncategorized_query = db.query(
+            func.sum(models.Transaction.amount).label("total")
+        ).filter(
+            models.Transaction.category_id.is_(None),
+            models.Transaction.transaction_type == transaction_type,
+            models.Transaction.user_id == current_user.id,
         )
+        if start_date and end_date:
+            uncategorized_query = uncategorized_query.filter(
+                models.Transaction.date >= start_date,
+                models.Transaction.date <= end_date,
+            )
+        uncategorized = uncategorized_query.scalar()
 
         # Format the results
         results = [
-            {"category": total.category or "Uncategorized", "total": float(total.total)}
+            {
+                "category": total.category or "Uncategorized",
+                "total": float(total.total) if total.total else 0.0,
+            }
             for total in category_totals
         ]
-
-        # Add uncategorized total if exists
         if uncategorized:
             results.append({"category": "Uncategorized", "total": float(uncategorized)})
-
         return sorted(results, key=lambda x: x["total"], reverse=True)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,49 +1,105 @@
-import { useEffect, useState } from 'react';
-import { useForm } from 'react-hook-form';
-import { apiService, Category } from '../api/api';
+import { useEffect, useState } from "react";
+import { useForm } from "react-hook-form";
+import { apiService, Category } from "../api/api";
 
 const Categories = () => {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<Category | null>(
+    null
+  );
+  const [error, setError] = useState<string | null>(null);
 
-  const { register, handleSubmit, reset, formState: { errors } } = useForm<Omit<Category, 'id'>>();
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm<Omit<Category, "id">>();
+
+  const fetchCategories = async () => {
+    try {
+      setError(null);
+      const data = await apiService.getCategories();
+      setCategories(data);
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      setError("Failed to load categories. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchCategories = async () => {
-      try {
-        const data = await apiService.getCategories();
-        setCategories(data);
-      } catch (error) {
-        console.error('Error fetching categories:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchCategories();
   }, []);
 
-  const openModal = () => {
-    reset({
-      name: '',
-      transaction_type: 'EXPENSE',
-    });
+  const openModal = (category?: Category) => {
+    if (category) {
+      setSelectedCategory(category);
+      reset({
+        name: category.name,
+        transaction_type: category.transaction_type,
+      });
+    } else {
+      setSelectedCategory(null);
+      reset({
+        name: "",
+        transaction_type: "EXPENSE",
+      });
+    }
     setIsModalOpen(true);
   };
 
   const closeModal = () => {
     setIsModalOpen(false);
+    setSelectedCategory(null);
     reset();
   };
 
-  const onSubmit = async (data: Omit<Category, 'id'>) => {
+  const onSubmit = async (data: Omit<Category, "id">) => {
     try {
-      const newCategory = await apiService.createCategory(data);
-      setCategories([...categories, newCategory]);
+      setError(null);
+      if (selectedCategory) {
+        // Update existing category
+        const updatedCategory = await apiService.updateCategory(
+          selectedCategory.id,
+          data
+        );
+        setCategories(
+          categories.map((cat) =>
+            cat.id === selectedCategory.id ? updatedCategory : cat
+          )
+        );
+      } else {
+        // Create new category
+        const newCategory = await apiService.createCategory(data);
+        setCategories([...categories, newCategory]);
+      }
       closeModal();
-    } catch (error) {
-      console.error('Error creating category:', error);
+    } catch (error: any) {
+      console.error("Error saving category:", error);
+      setError(
+        error.response?.data?.detail ||
+          "Failed to save category. Please try again."
+      );
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (window.confirm("Are you sure you want to delete this category?")) {
+      try {
+        setError(null);
+        await apiService.deleteCategory(id);
+        setCategories(categories.filter((cat) => cat.id !== id));
+      } catch (error: any) {
+        console.error("Error deleting category:", error);
+        setError(
+          error.response?.data?.detail ||
+            "Failed to delete category. Please try again."
+        );
+      }
     }
   };
 
@@ -60,69 +116,136 @@ const Categories = () => {
       <div className="mb-5 flex justify-between items-center">
         <h1 className="text-2xl font-semibold text-gray-900">Categories</h1>
         <button
-          onClick={openModal}
+          onClick={() => openModal()}
           className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
         >
           Add Category
         </button>
       </div>
 
-      {/* Categories Grid */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {categories.length > 0 ? (
-          categories.map((category) => (
-            <div key={category.id} className="bg-white overflow-hidden shadow rounded-lg">
-              <div className="px-4 py-5 sm:p-6">
-                <div className="flex items-center">
-                  <div className="flex-shrink-0 bg-indigo-500 rounded-md p-3">
-                    <svg className="h-6 w-6 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-                    </svg>
-                  </div>
-                  <div className="ml-5 w-0 flex-1">
-                    <dl>
-                      <dt className="text-sm font-medium text-gray-500 truncate">
-                        {category.name}
-                      </dt>
-                      <dd>
-                        <div className="text-lg font-medium text-gray-900">
-                          {category.transaction_type}
-                        </div>
-                      </dd>
-                    </dl>
-                  </div>
-                </div>
-              </div>
+      {error && (
+        <div
+          className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative"
+          role="alert"
+        >
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
+
+      {/* Categories Table */}
+      <div className="mt-4 flex flex-col">
+        <div className="-my-2 -mx-4 overflow-x-auto sm:-mx-6 lg:-mx-8">
+          <div className="inline-block min-w-full py-2 align-middle md:px-6 lg:px-8">
+            <div className="overflow-hidden shadow ring-1 ring-black ring-opacity-5 md:rounded-lg">
+              <table className="min-w-full divide-y divide-gray-300">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th
+                      scope="col"
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                    >
+                      Name
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-3.5 text-left text-sm font-semibold text-gray-900"
+                    >
+                      Type
+                    </th>
+                    <th
+                      scope="col"
+                      className="px-3 py-3.5 text-right text-sm font-semibold text-gray-900"
+                    >
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200 bg-white">
+                  {categories.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="px-3 py-4 text-center text-sm text-gray-500"
+                      >
+                        No categories found. Add one to get started!
+                      </td>
+                    </tr>
+                  ) : (
+                    categories.map((category) => (
+                      <tr key={category.id}>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          <span className="font-medium text-gray-900">
+                            {category.name}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm">
+                          <span
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              category.transaction_type === "EXPENSE"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-green-100 text-green-800"
+                            }`}
+                          >
+                            {category.transaction_type.charAt(0) +
+                              category.transaction_type.slice(1).toLowerCase()}
+                          </span>
+                        </td>
+                        <td className="whitespace-nowrap px-3 py-4 text-sm text-right">
+                          <button
+                            onClick={() => openModal(category)}
+                            className="text-indigo-600 hover:text-indigo-900 mr-4"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(category.id)}
+                            className="text-red-600 hover:text-red-900"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
-          ))
-        ) : (
-          <div className="col-span-3 text-center py-10 bg-white shadow rounded-lg">
-            <p className="text-gray-500">No categories found. Add one to get started!</p>
           </div>
-        )}
+        </div>
       </div>
 
       {/* Category Modal */}
       {isModalOpen && (
         <div className="fixed z-10 inset-0 overflow-y-auto">
           <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
+            <div
+              className="fixed inset-0 transition-opacity"
+              aria-hidden="true"
+            >
               <div className="absolute inset-0 bg-gray-500 opacity-75"></div>
             </div>
 
-            <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            <span
+              className="hidden sm:inline-block sm:align-middle sm:h-screen"
+              aria-hidden="true"
+            >
+              &#8203;
+            </span>
 
             <div className="inline-block align-bottom bg-white rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
               <div className="sm:flex sm:items-start">
                 <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
                   <h3 className="text-lg leading-6 font-medium text-gray-900">
-                    Add Category
+                    {selectedCategory ? "Edit Category" : "Add Category"}
                   </h3>
                   <div className="mt-4">
                     <form onSubmit={handleSubmit(onSubmit)}>
                       <div className="grid grid-cols-1 gap-y-6 gap-x-4 sm:grid-cols-6">
                         <div className="sm:col-span-6">
-                          <label htmlFor="name" className="block text-sm font-medium text-gray-700">
+                          <label
+                            htmlFor="name"
+                            className="block text-sm font-medium text-gray-700"
+                          >
                             Category Name
                           </label>
                           <div className="mt-1">
@@ -130,23 +253,30 @@ const Categories = () => {
                               type="text"
                               id="name"
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register('name', { required: true })}
+                              {...register("name", { required: true })}
                             />
                             {errors.name && (
-                              <p className="mt-1 text-sm text-red-600">Category name is required</p>
+                              <p className="mt-1 text-sm text-red-600">
+                                Category name is required
+                              </p>
                             )}
                           </div>
                         </div>
 
                         <div className="sm:col-span-6">
-                          <label htmlFor="transaction_type" className="block text-sm font-medium text-gray-700">
+                          <label
+                            htmlFor="transaction_type"
+                            className="block text-sm font-medium text-gray-700"
+                          >
                             Type
                           </label>
                           <div className="mt-1">
                             <select
                               id="transaction_type"
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register('transaction_type', { required: true })}
+                              {...register("transaction_type", {
+                                required: true,
+                              })}
                             >
                               <option value="EXPENSE">Expense</option>
                               <option value="INCOME">Income</option>
@@ -160,7 +290,7 @@ const Categories = () => {
                           type="submit"
                           className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-indigo-600 text-base font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:col-start-2 sm:text-sm"
                         >
-                          Add Category
+                          {selectedCategory ? "Save Changes" : "Add Category"}
                         </button>
                         <button
                           type="button"
@@ -182,4 +312,4 @@ const Categories = () => {
   );
 };
 
-export default Categories; 
+export default Categories;

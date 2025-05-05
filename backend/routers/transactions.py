@@ -6,6 +6,7 @@ from typing import List, Optional
 from sqlalchemy import desc, asc, and_
 from datetime import date
 from math import ceil
+import logging
 
 from ..database import get_db
 from .. import models
@@ -18,6 +19,10 @@ from ..schemas import (
 from ..auth import get_current_active_user
 from ..models import User
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 
@@ -27,32 +32,47 @@ def create_transaction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    # Validate category belongs to user
-    category = (
-        db.query(models.Category)
-        .filter(
-            models.Category.id == transaction.category_id,
-            models.Category.user_id == current_user.id,
+    try:
+        # Validate category belongs to user and matches transaction type
+        category = (
+            db.query(models.Category)
+            .filter(
+                models.Category.id == transaction.category_id,
+                models.Category.user_id == current_user.id,
+            )
+            .first()
         )
-        .first()
-    )
-    if not category:
-        raise HTTPException(status_code=400, detail="Invalid category ID")
+        if not category:
+            raise HTTPException(status_code=400, detail="Invalid category ID")
 
-    db_transaction = models.Transaction(
-        amount=transaction.amount,
-        date=transaction.date,
-        description=transaction.description,
-        is_recurring=transaction.is_recurring,
-        recurrence_period=transaction.recurrence_period,
-        transaction_type=transaction.transaction_type,
-        category_id=transaction.category_id,
-        user_id=current_user.id,
-    )
-    db.add(db_transaction)
-    db.commit()
-    db.refresh(db_transaction)
-    return db_transaction
+        # Validate category type matches transaction type
+        if category.transaction_type != transaction.transaction_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Category type ({category.transaction_type}) does not match transaction type ({transaction.transaction_type})",
+            )
+
+        db_transaction = models.Transaction(
+            amount=transaction.amount,
+            date=transaction.date or date.today(),
+            description=transaction.description,
+            transaction_type=transaction.transaction_type,
+            category_id=transaction.category_id,
+            user_id=current_user.id,
+        )
+        db.add(db_transaction)
+        db.commit()
+        db.refresh(db_transaction)
+        logger.info(
+            f"Created transaction {db_transaction.id} for user {current_user.id}"
+        )
+        return db_transaction
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating transaction: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error creating transaction")
 
 
 @router.get("", response_model=PaginatedResponse[TransactionRead])
@@ -102,13 +122,25 @@ async def list_transactions(
         # Get the column to sort by
         sort_column = getattr(models.Transaction, sort_by, None)
         if sort_column is not None:
-            # Apply sorting direction
-            query = query.order_by(
-                sort_column.desc() if sort_desc else sort_column.asc()
-            )
+            if sort_by == "date":
+                # Sort by date, then by id (both descending if sort_desc)
+                if sort_desc:
+                    query = query.order_by(
+                        sort_column.desc(), models.Transaction.id.desc()
+                    )
+                else:
+                    query = query.order_by(
+                        sort_column.asc(), models.Transaction.id.asc()
+                    )
+            else:
+                query = query.order_by(
+                    sort_column.desc() if sort_desc else sort_column.asc()
+                )
     else:
-        # Default sort by date descending
-        query = query.order_by(models.Transaction.date.desc())
+        # Default sort by date descending, then id descending
+        query = query.order_by(
+            models.Transaction.date.desc(), models.Transaction.id.desc()
+        )
 
     # Get total count for pagination
     total = query.count()
@@ -154,35 +186,52 @@ def update_transaction(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_active_user),
 ):
-    db_transaction = (
-        db.query(models.Transaction)
-        .filter(
-            models.Transaction.id == transaction_id,
-            models.Transaction.user_id == current_user.id,
+    try:
+        # Verify transaction exists and belongs to user
+        db_transaction = (
+            db.query(models.Transaction)
+            .filter(
+                models.Transaction.id == transaction_id,
+                models.Transaction.user_id == current_user.id,
+            )
+            .first()
         )
-        .first()
-    )
-    if not db_transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
+        if not db_transaction:
+            raise HTTPException(status_code=404, detail="Transaction not found")
 
-    # Validate category belongs to user
-    category = (
-        db.query(models.Category)
-        .filter(
-            models.Category.id == transaction.category_id,
-            models.Category.user_id == current_user.id,
+        # Validate category belongs to user and matches transaction type
+        category = (
+            db.query(models.Category)
+            .filter(
+                models.Category.id == transaction.category_id,
+                models.Category.user_id == current_user.id,
+            )
+            .first()
         )
-        .first()
-    )
-    if not category:
-        raise HTTPException(status_code=400, detail="Invalid category ID")
+        if not category:
+            raise HTTPException(status_code=400, detail="Invalid category ID")
 
-    for key, value in transaction.dict(exclude_unset=True).items():
-        setattr(db_transaction, key, value)
+        # Validate category type matches transaction type
+        if category.transaction_type != transaction.transaction_type:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Category type ({category.transaction_type}) does not match transaction type ({transaction.transaction_type})",
+            )
 
-    db.commit()
-    db.refresh(db_transaction)
-    return db_transaction
+        # Update transaction fields
+        for key, value in transaction.dict(exclude_unset=True).items():
+            setattr(db_transaction, key, value)
+
+        db.commit()
+        db.refresh(db_transaction)
+        logger.info(f"Updated transaction {transaction_id} for user {current_user.id}")
+        return db_transaction
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating transaction {transaction_id}: {str(e)}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Error updating transaction")
 
 
 @router.delete("/{transaction_id}")

@@ -33,8 +33,6 @@ class ResponseGenerator:
                 "amount": row[1],
                 "date": row[2],
                 "description": row[3],
-                "is_recurring": row[4],
-                "recurrence_period": row[5],
                 "transaction_type": row[6],
                 "category_name": row[7],
             }
@@ -64,8 +62,6 @@ class ResponseGenerator:
                 symbol = "💰" if row_dict["transaction_type"] == "INCOME" else "💳"
                 amount_str = f"${row_dict['amount']:,.2f}"
                 description = row_dict["description"]
-                if row_dict["is_recurring"]:
-                    description = f"{description} (🔄 {row_dict['recurrence_period']})"
                 category_str = (
                     f"[{row_dict['category_name']}]"
                     if row_dict["category_name"]
@@ -126,8 +122,6 @@ class ResponseGenerator:
                                     "amount": row[1],
                                     "date": row[2],
                                     "description": row[3],
-                                    "is_recurring": row[4],
-                                    "recurrence_period": row[5],
                                     "transaction_type": row[6],
                                     "category_name": row[7],
                                 }

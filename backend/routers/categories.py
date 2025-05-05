@@ -79,3 +79,100 @@ async def list_categories(
         raise HTTPException(
             status_code=500, detail="An error occurred while retrieving categories"
         )
+
+
+@router.put("/{category_id}", response_model=CategoryRead)
+def update_category(
+    category_id: int,
+    category: CategoryCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    logger.info(
+        f"Updating category {category_id} for user {current_user.id}: {category.dict()}"
+    )
+
+    # Check if category exists and belongs to the user
+    db_category = (
+        db.query(models.Category)
+        .filter(
+            models.Category.id == category_id,
+            models.Category.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not db_category:
+        logger.warning(f"Category {category_id} not found for user {current_user.id}")
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    # Check if new name conflicts with existing category (excluding current category)
+    existing = (
+        db.query(models.Category)
+        .filter(
+            models.Category.name == category.name,
+            models.Category.user_id == current_user.id,
+            models.Category.id != category_id,
+        )
+        .first()
+    )
+
+    if existing:
+        logger.warning(
+            f"Category name {category.name} already exists for user {current_user.id}"
+        )
+        raise HTTPException(status_code=400, detail="Category name already exists")
+
+    # Update category
+    db_category.name = category.name
+    db_category.transaction_type = category.transaction_type
+
+    db.commit()
+    db.refresh(db_category)
+
+    logger.info(f"Category updated: {db_category.id}")
+    return db_category
+
+
+@router.delete("/{category_id}")
+def delete_category(
+    category_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_active_user),
+):
+    logger.info(f"Deleting category {category_id} for user {current_user.id}")
+
+    # Check if category exists and belongs to the user
+    db_category = (
+        db.query(models.Category)
+        .filter(
+            models.Category.id == category_id,
+            models.Category.user_id == current_user.id,
+        )
+        .first()
+    )
+
+    if not db_category:
+        logger.warning(f"Category {category_id} not found for user {current_user.id}")
+        raise HTTPException(status_code=404, detail="Category not found")
+
+    # Check if category has any associated transactions
+    has_transactions = (
+        db.query(models.Transaction)
+        .filter(models.Transaction.category_id == category_id)
+        .first()
+    )
+
+    if has_transactions:
+        logger.warning(f"Category {category_id} has associated transactions")
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot delete category that has associated transactions",
+        )
+
+    # Delete the category
+    db.delete(db_category)
+    db.commit()
+
+    logger.info(f"Category {category_id} deleted successfully")
+    return {"detail": "Category deleted successfully"}

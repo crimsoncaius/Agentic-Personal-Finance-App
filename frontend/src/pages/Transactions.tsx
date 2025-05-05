@@ -19,6 +19,10 @@ import {
   PaginatedResponse,
   PaginationParams,
 } from "../api/api";
+import { DayPicker, DateRange } from "react-day-picker";
+import { format } from "date-fns";
+import * as Popover from "@radix-ui/react-popover";
+import "react-day-picker/dist/style.css";
 
 const columnHelper = createColumnHelper<Transaction>();
 
@@ -55,11 +59,27 @@ const Transactions = () => {
   const [totalPages, setTotalPages] = useState(0);
   const [totalItems, setTotalItems] = useState(0);
   const [sorting, setSorting] = useState<SortingState>(
-    loadSortingFromStorage()
+    loadSortingFromStorage().length > 0
+      ? loadSortingFromStorage()
+      : [{ id: "date", desc: true }]
   );
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>(
     loadFiltersFromStorage()
   );
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [modalPopoverOpen, setModalPopoverOpen] = useState(false);
+  const [dateRangeFilter, setDateRangeFilter] = useState<DateRange | undefined>(
+    () => {
+      const filter = columnFilters.find((f) => f.id === "date");
+      return filter ? (filter.value as DateRange) : undefined;
+    }
+  );
+  const [descriptionFilter, setDescriptionFilter] = useState<string>(() => {
+    const filter = columnFilters.find((f) => f.id === "description");
+    return filter ? (filter.value as string) : "";
+  });
+  const [datePopoverOpen, setDatePopoverOpen] = useState(false);
+  const [formSubmitted, setFormSubmitted] = useState(false);
 
   const {
     register,
@@ -67,7 +87,13 @@ const Transactions = () => {
     reset,
     setValue,
     formState: { errors },
-  } = useForm<Omit<Transaction, "id">>();
+    watch,
+  } = useForm<
+    Omit<Transaction, "id"> & { start_date?: string; end_date?: string }
+  >();
+
+  // Watch the currently selected transaction type
+  const selectedType = watch("transaction_type");
 
   const formatRecurrencePeriod = (period: string | undefined | null) => {
     if (!period || period === "NONE") return "One-time";
@@ -77,59 +103,27 @@ const Transactions = () => {
   const columns = useMemo(
     () => [
       columnHelper.accessor("date", {
-        header: ({ column }) => (
-          <div>
-            <div className="flex items-center space-x-2">
-              <span>Date</span>
-              <button
-                onClick={() =>
-                  column.toggleSorting(column.getIsSorted() === "asc")
-                }
-                className="text-gray-500 hover:text-gray-700"
-              >
-                {column.getIsSorted() === "asc"
-                  ? "↑"
-                  : column.getIsSorted() === "desc"
-                  ? "↓"
-                  : "↕"}
-              </button>
-            </div>
-            <div className="mt-2 space-y-2">
-              <div>
-                <label className="block text-xs text-gray-500">
-                  Start Date
-                </label>
-                <input
-                  type="date"
-                  value={(column.getFilterValue() as any)?.startDate ?? ""}
-                  onChange={(e) => {
-                    const currentFilter = column.getFilterValue() as any;
-                    column.setFilterValue({
-                      ...currentFilter,
-                      startDate: e.target.value,
-                    });
-                  }}
-                  className="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                />
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500">End Date</label>
-                <input
-                  type="date"
-                  value={(column.getFilterValue() as any)?.endDate ?? ""}
-                  onChange={(e) => {
-                    const currentFilter = column.getFilterValue() as any;
-                    column.setFilterValue({
-                      ...currentFilter,
-                      endDate: e.target.value,
-                    });
-                  }}
-                  className="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                />
+        header: ({ column }) => {
+          return (
+            <div>
+              <div className="flex items-center space-x-2">
+                <span>Date</span>
+                <button
+                  onClick={() =>
+                    column.toggleSorting(column.getIsSorted() === "asc")
+                  }
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  {column.getIsSorted() === "asc"
+                    ? "↑"
+                    : column.getIsSorted() === "desc"
+                    ? "↓"
+                    : "↕"}
+                </button>
               </div>
             </div>
-          </div>
-        ),
+          );
+        },
         cell: (info) => {
           const date = new Date(info.getValue());
           return date.toLocaleDateString("en-US", {
@@ -139,21 +133,13 @@ const Transactions = () => {
             day: "numeric",
           });
         },
-        filterFn: (
-          row,
-          columnId,
-          filterValue: { startDate?: string; endDate?: string }
-        ) => {
-          if (!filterValue?.startDate && !filterValue?.endDate) return true;
-
+        filterFn: (row, columnId, filterValue: DateRange) => {
+          if (!filterValue?.from && !filterValue?.to) return true;
           const date = new Date(row.getValue(columnId));
-          const startDate = filterValue.startDate
-            ? new Date(filterValue.startDate)
+          const startDate = filterValue.from
+            ? new Date(filterValue.from)
             : null;
-          const endDate = filterValue.endDate
-            ? new Date(filterValue.endDate)
-            : null;
-
+          const endDate = filterValue.to ? new Date(filterValue.to) : null;
           if (startDate && endDate) {
             return date >= startDate && date <= endDate;
           } else if (startDate) {
@@ -161,37 +147,16 @@ const Transactions = () => {
           } else if (endDate) {
             return date <= endDate;
           }
-
           return true;
         },
       }),
       columnHelper.accessor("description", {
-        header: ({ column }) => (
-          <div>
-            <div>Description</div>
-            <div className="mt-1">
-              <input
-                type="text"
-                value={(column.getFilterValue() as string) ?? ""}
-                onChange={(e) => column.setFilterValue(e.target.value)}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="block w-full text-sm border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
-                placeholder="Filter..."
-              />
-            </div>
-          </div>
-        ),
+        header: () => <div>Description</div>,
         cell: (info) => (
           <div className="flex flex-col">
             <span className="text-gray-900">
               {info.getValue() || "No description"}
             </span>
-            {info.row.original.is_recurring && (
-              <span className="text-xs text-indigo-600">
-                Recurring (
-                {formatRecurrencePeriod(info.row.original.recurrence_period)})
-              </span>
-            )}
           </div>
         ),
       }),
@@ -309,10 +274,6 @@ const Transactions = () => {
           </div>
         ),
       }),
-      columnHelper.accessor("recurrence_period", {
-        header: "Recurrence",
-        cell: (info) => formatRecurrencePeriod(info.getValue()),
-      }),
     ],
     [categories]
   );
@@ -405,24 +366,21 @@ const Transactions = () => {
     if (transaction) {
       setSelectedTransaction(transaction);
       setValue("amount", transaction.amount);
-      setValue("date", transaction.date);
       setValue("description", transaction.description || "");
-      setValue("is_recurring", transaction.is_recurring);
-      setValue("recurrence_period", transaction.recurrence_period);
       setValue("transaction_type", transaction.transaction_type);
       setValue("category_id", transaction.category_id);
+      setSelectedDate(new Date(transaction.date));
     } else {
       setSelectedTransaction(null);
       reset({
         amount: 0,
-        date: new Date().toISOString().split("T")[0],
         description: "",
-        is_recurring: false,
-        recurrence_period: "NONE",
         transaction_type: "EXPENSE",
         category_id: categories.length > 0 ? categories[0].id : 1,
       });
+      setSelectedDate(undefined);
     }
+    setFormSubmitted(false);
     setIsModalOpen(true);
   };
 
@@ -430,15 +388,26 @@ const Transactions = () => {
     setIsModalOpen(false);
     setSelectedTransaction(null);
     reset();
+    setFormSubmitted(false);
   };
 
   const onSubmit = async (data: Omit<Transaction, "id">) => {
+    setFormSubmitted(true);
     try {
+      if (!selectedDate) {
+        alert("Please select a date.");
+        return;
+      }
+      const payload = {
+        ...data,
+        amount: Number(data.amount),
+        category_id: Number(data.category_id),
+        date: format(selectedDate, "yyyy-MM-dd"),
+      };
       if (selectedTransaction) {
-        // Update existing transaction
         const updatedTransaction = await apiService.updateTransaction(
           selectedTransaction.id,
-          data
+          payload
         );
         setTransactions(
           transactions.map((t) =>
@@ -446,9 +415,31 @@ const Transactions = () => {
           )
         );
       } else {
-        // Create new transaction
-        const newTransaction = await apiService.createTransaction(data);
-        setTransactions([...transactions, newTransaction]);
+        await apiService.createTransaction(payload);
+        setLoading(true);
+        try {
+          const transactionsData = await apiService.getTransactions({
+            ...pagination,
+            sorting: sorting.map((sort) => ({
+              id: sort.id,
+              desc: sort.desc,
+            })),
+            filters: columnFilters.reduce(
+              (acc, filter) => ({
+                ...acc,
+                [filter.id]: filter.value,
+              }),
+              {}
+            ),
+          });
+          setTransactions(transactionsData.data);
+          setTotalPages(transactionsData.totalPages);
+          setTotalItems(transactionsData.total);
+        } catch (error) {
+          console.error("Error fetching transactions after add:", error);
+        } finally {
+          setLoading(false);
+        }
       }
       closeModal();
     } catch (error) {
@@ -460,11 +451,51 @@ const Transactions = () => {
     if (confirm("Are you sure you want to delete this transaction?")) {
       try {
         await apiService.deleteTransaction(id);
-        setTransactions(transactions.filter((t) => t.id !== id));
+        // Instead of just filtering local state, refetch the current page
+        const transactionsData = await apiService.getTransactions({
+          ...pagination,
+          sorting: sorting.map((sort) => ({
+            id: sort.id,
+            desc: sort.desc,
+          })),
+          filters: columnFilters.reduce(
+            (acc, filter) => ({
+              ...acc,
+              [filter.id]: filter.value,
+            }),
+            {}
+          ),
+        });
+        setTransactions(transactionsData.data);
+        setTotalPages(transactionsData.totalPages);
+        setTotalItems(transactionsData.total);
       } catch (error) {
         console.error("Error deleting transaction:", error);
       }
     }
+  };
+
+  const handleDateRangeChange = (range: DateRange | undefined) => {
+    setDateRangeFilter(range);
+    setColumnFilters((prev) => {
+      const otherFilters = prev.filter((f) => f.id !== "date");
+      if (range && (range.from || range.to)) {
+        return [...otherFilters, { id: "date", value: range }];
+      }
+      return otherFilters;
+    });
+  };
+
+  const handleDescriptionChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setDescriptionFilter(value);
+    setColumnFilters((prev) => {
+      const otherFilters = prev.filter((f) => f.id !== "description");
+      if (value) {
+        return [...otherFilters, { id: "description", value }];
+      }
+      return otherFilters;
+    });
   };
 
   if (loading) {
@@ -482,8 +513,9 @@ const Transactions = () => {
         <div className="flex gap-3">
           <button
             onClick={() => {
-              // Clear all column filters and localStorage
               table.resetColumnFilters();
+              setDateRangeFilter(undefined);
+              setDescriptionFilter("");
               localStorage.removeItem("transactionFilters");
               localStorage.removeItem("transactionSorting");
             }}
@@ -499,7 +531,68 @@ const Transactions = () => {
           </button>
         </div>
       </div>
-
+      {/* Filter Bar */}
+      <div className="flex flex-wrap gap-4 mb-4">
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 mb-1">
+            DATE
+          </label>
+          <Popover.Root
+            open={datePopoverOpen}
+            onOpenChange={setDatePopoverOpen}
+          >
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                className="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+              >
+                {dateRangeFilter?.from && dateRangeFilter?.to
+                  ? `${format(dateRangeFilter.from, "MMM d, yyyy")} – ${format(
+                      dateRangeFilter.to,
+                      "MMM d, yyyy"
+                    )}`
+                  : "Filter by date range"}
+              </button>
+            </Popover.Trigger>
+            <Popover.Portal>
+              <Popover.Content
+                sideOffset={8}
+                className="z-50 bg-white rounded-lg shadow-lg p-4 border border-gray-200"
+                onOpenAutoFocus={(e) => e.preventDefault()}
+              >
+                <DayPicker
+                  mode="range"
+                  selected={dateRangeFilter}
+                  onSelect={handleDateRangeChange}
+                  toDate={new Date()}
+                  disabled={{ after: new Date() }}
+                  className="rounded-lg"
+                />
+                <div className="mt-2 flex justify-end">
+                  <button
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                    onClick={() => handleDateRangeChange(undefined)}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </Popover.Content>
+            </Popover.Portal>
+          </Popover.Root>
+        </div>
+        <div>
+          <label className="block text-xs font-semibold text-gray-500 mb-1">
+            DESCRIPTION
+          </label>
+          <input
+            type="text"
+            value={descriptionFilter}
+            onChange={handleDescriptionChange}
+            className="w-64 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+            placeholder="Filter..."
+          />
+        </div>
+      </div>
       {/* Transactions Table */}
       <div className="bg-white shadow overflow-hidden sm:rounded-lg">
         <div className="overflow-x-auto">
@@ -677,37 +770,85 @@ const Transactions = () => {
                               id="amount"
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                               {...register("amount", {
-                                required: true,
-                                min: 0.01,
+                                required: "Amount is required",
+                                min: {
+                                  value: 0.01,
+                                  message: "Amount must be greater than 0",
+                                },
+                                max: {
+                                  value: 1000000000,
+                                  message: "Amount cannot exceed 1 billion",
+                                },
+                                validate: {
+                                  isNumber: (value) =>
+                                    !isNaN(value) ||
+                                    "Amount must be a valid number",
+                                  decimals: (value) => {
+                                    const decimals = value
+                                      .toString()
+                                      .split(".")[1];
+                                    return (
+                                      !decimals ||
+                                      decimals.length <= 2 ||
+                                      "Amount cannot have more than 2 decimal places"
+                                    );
+                                  },
+                                },
                               })}
                             />
                             {errors.amount && (
                               <p className="mt-1 text-sm text-red-600">
-                                Amount is required and must be positive
+                                {errors.amount.message}
                               </p>
                             )}
                           </div>
                         </div>
 
                         <div className="sm:col-span-3">
-                          <label
-                            htmlFor="date"
-                            className="block text-sm font-medium text-gray-700"
-                          >
+                          <label className="block text-sm font-medium text-gray-700">
                             Date
                           </label>
                           <div className="mt-1">
-                            <input
-                              type="date"
-                              id="date"
-                              className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register("date", { required: true })}
-                            />
-                            {errors.date && (
+                            <Popover.Root
+                              open={modalPopoverOpen}
+                              onOpenChange={setModalPopoverOpen}
+                            >
+                              <Popover.Trigger asChild>
+                                <button
+                                  type="button"
+                                  className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm bg-white text-left focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                                >
+                                  {selectedDate
+                                    ? format(selectedDate, "MMM d, yyyy")
+                                    : "Select a date"}
+                                </button>
+                              </Popover.Trigger>
+                              <Popover.Portal>
+                                <Popover.Content
+                                  sideOffset={8}
+                                  className="z-50 bg-white rounded-lg shadow-lg p-4 border border-gray-200"
+                                  onOpenAutoFocus={(e) => e.preventDefault()}
+                                >
+                                  <DayPicker
+                                    mode="single"
+                                    selected={selectedDate}
+                                    onSelect={(date) => {
+                                      setSelectedDate(date);
+                                      if (date) setModalPopoverOpen(false);
+                                    }}
+                                    toDate={new Date()}
+                                    disabled={{ after: new Date() }}
+                                    required
+                                    className="rounded-lg"
+                                  />
+                                </Popover.Content>
+                              </Popover.Portal>
+                            </Popover.Root>
+                            {formSubmitted && !selectedDate ? (
                               <p className="mt-1 text-sm text-red-600">
-                                Date is required
+                                Please select a date.
                               </p>
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
@@ -722,9 +863,26 @@ const Transactions = () => {
                             <input
                               type="text"
                               id="description"
+                              maxLength={500}
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register("description")}
+                              {...register("description", {
+                                required: "Description is required",
+                                minLength: {
+                                  value: 1,
+                                  message: "Description cannot be empty",
+                                },
+                                maxLength: {
+                                  value: 500,
+                                  message:
+                                    "Description cannot exceed 500 characters",
+                                },
+                              })}
                             />
+                            {errors.description && (
+                              <p className="mt-1 text-sm text-red-600">
+                                {errors.description.message}
+                              </p>
+                            )}
                           </div>
                         </div>
 
@@ -740,7 +898,12 @@ const Transactions = () => {
                               id="transaction_type"
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
                               {...register("transaction_type", {
-                                required: true,
+                                required: "Transaction type is required",
+                                validate: {
+                                  validType: (value) =>
+                                    ["INCOME", "EXPENSE"].includes(value) ||
+                                    "Invalid transaction type",
+                                },
                               })}
                             >
                               <option value="EXPENSE">Expense</option>
@@ -760,52 +923,27 @@ const Transactions = () => {
                             <select
                               id="category_id"
                               className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register("category_id", { required: true })}
+                              {...register("category_id", {
+                                required: "Category is required",
+                                validate: {
+                                  validCategory: (value) =>
+                                    categories.some(
+                                      (cat) => cat.id === Number(value)
+                                    ) || "Invalid category",
+                                },
+                              })}
                             >
-                              {categories.map((category) => (
-                                <option key={category.id} value={category.id}>
-                                  {category.name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        </div>
-
-                        <div className="sm:col-span-3">
-                          <div className="flex items-center h-5 mt-5">
-                            <input
-                              id="is_recurring"
-                              type="checkbox"
-                              className="focus:ring-indigo-500 h-4 w-4 text-indigo-600 border-gray-300 rounded"
-                              {...register("is_recurring")}
-                            />
-                            <label
-                              htmlFor="is_recurring"
-                              className="ml-2 block text-sm text-gray-700"
-                            >
-                              Recurring Transaction
-                            </label>
-                          </div>
-                        </div>
-
-                        <div className="sm:col-span-3">
-                          <label
-                            htmlFor="recurrence_period"
-                            className="block text-sm font-medium text-gray-700"
-                          >
-                            Recurrence Period
-                          </label>
-                          <div className="mt-1">
-                            <select
-                              id="recurrence_period"
-                              className="shadow-sm focus:ring-indigo-500 focus:border-indigo-500 block w-full sm:text-sm border-gray-300 rounded-md"
-                              {...register("recurrence_period")}
-                            >
-                              <option value="NONE">None</option>
-                              <option value="DAILY">Daily</option>
-                              <option value="WEEKLY">Weekly</option>
-                              <option value="MONTHLY">Monthly</option>
-                              <option value="YEARLY">Yearly</option>
+                              {categories
+                                .filter((category) =>
+                                  selectedType
+                                    ? category.transaction_type === selectedType
+                                    : true
+                                )
+                                .map((category) => (
+                                  <option key={category.id} value={category.id}>
+                                    {category.name}
+                                  </option>
+                                ))}
                             </select>
                           </div>
                         </div>

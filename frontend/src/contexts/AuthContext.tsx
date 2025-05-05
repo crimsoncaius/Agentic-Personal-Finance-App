@@ -5,19 +5,22 @@ import {
   useEffect,
   ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 interface AuthContextType {
   isAuthenticated: boolean;
   login: (token: string) => void;
   logout: () => void;
+  loading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [loading, setLoading] = useState<boolean>(true);
   const navigate = useNavigate();
+  const location = useLocation();
 
   // Check token on mount and validate it
   useEffect(() => {
@@ -46,10 +49,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setIsAuthenticated(false);
       }
     } else {
-      console.log("[AuthContext] No token found, redirecting to login");
-      navigate("/login");
+      // Only redirect to login if not already on login or register page
+      if (location.pathname !== "/login" && location.pathname !== "/register") {
+        console.log("[AuthContext] No token found, redirecting to login");
+        navigate("/login");
+      }
     }
-  }, [navigate]);
+    setLoading(false); // Set loading to false after check
+  }, [navigate, location]);
 
   const login = (token: string) => {
     console.log("[AuthContext] Login called:", {
@@ -74,7 +81,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, login, logout }}>
+    <AuthContext.Provider value={{ isAuthenticated, login, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
